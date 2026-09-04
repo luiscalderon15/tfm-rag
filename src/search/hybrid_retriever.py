@@ -90,13 +90,17 @@ class HybridCandidateRetriever:
 
     return reciprocal_rank_fusion([semantic_ranked_ids, keyword_ranked_ids], k=self.rrf_k)
 
-  def retrieve(self, queries, rerank_query=None, top_n=10):
+  def retrieve(self, queries, rerank_query=None, top_n=10, use_rerank=None):
     """
     queries: a single query string, or a list of queries/facets to fuse. Each list
     item is either a plain string (auto-named "facet_1", "facet_2", ...) or an
     explicit (facet_name, query_text) tuple. Sub-query generation from a job
     description is the caller's responsibility, not this module's.
+
+    use_rerank: overrides the instance default (self.use_rerank) for this call only,
+    e.g. to let a UI toggle reranking on/off without rebuilding the retriever.
     """
+    use_rerank = self.use_rerank if use_rerank is None else use_rerank
     facets = self._normalize_queries(queries)
     facet_names = [name for name, _ in facets]
 
@@ -114,7 +118,7 @@ class HybridCandidateRetriever:
     max_evidence = max(self.max_evidence_per_candidate, len(facet_names))
     results = self._build_candidate_results(shortlist_ids, fused_candidate_scores, per_facet_candidate_best, facet_names, max_evidence)
 
-    if self.use_rerank:
+    if use_rerank:
       rerank_text = rerank_query if rerank_query is not None else facets[0][1]
       results = self._rerank(rerank_text, results)
 
@@ -124,12 +128,19 @@ class HybridCandidateRetriever:
   def _build_candidate_results(self, shortlist_ids, fused_scores, per_facet_candidate_best, facet_names, max_evidence):
     results = []
     for candidate_id in shortlist_ids:
-      evidence = []
+      evidence_by_chunk = {}
       for facet_name, candidate_best in zip(facet_names, per_facet_candidate_best):
         if candidate_id in candidate_best:
           score, chunk_id = candidate_best[candidate_id]
-          doc = self.docs_by_chunk_id[chunk_id]
-          evidence.append(Evidence(facet=facet_name, chunk_id=chunk_id, chunk_text=doc.page_content, fusion_score=score))
+          if chunk_id in evidence_by_chunk:
+            # Same chunk already won for another facet — merge instead of duplicating.
+            existing = evidence_by_chunk[chunk_id]
+            existing.facet = f"{existing.facet}, {facet_name}"
+            existing.fusion_score = max(existing.fusion_score, score)
+          else:
+            doc = self.docs_by_chunk_id[chunk_id]
+            evidence_by_chunk[chunk_id] = Evidence(facet=facet_name, chunk_id=chunk_id, chunk_text=doc.page_content, fusion_score=score)
+      evidence = list(evidence_by_chunk.values())
       evidence.sort(key=lambda e: e.fusion_score, reverse=True)
       evidence = evidence[:max_evidence]
       years_exp = self.years_exp_by_candidate.get(candidate_id)

@@ -85,9 +85,6 @@ class _LLMCandidateEvaluation(BaseModel):
 
 
 class _LLMScreeningResponse(BaseModel):
-  recommended_candidate_index: int = Field(
-    ..., description="The candidate_index judged as the single best overall match."
-  )
   evaluations: list[_LLMCandidateEvaluation] = Field(
     ...,
     description="One evaluation per candidate provided, ordered by rank ascending (best first).",
@@ -165,6 +162,9 @@ def evaluate_candidates(
   )
   llm_response = _LLMScreeningResponse.model_validate_json(response["message"]["content"])
 
+  if not llm_response.evaluations:
+    raise ValueError("LLM returned no evaluations.")
+
   evaluations = [
     CandidateEvaluation(
       candidate_id=_resolve_candidate_id(evaluation.candidate_index, results),
@@ -176,7 +176,12 @@ def evaluate_candidates(
     for evaluation in llm_response.evaluations
   ]
 
+  # Derived from the evaluation ranked #1, instead of asking the LLM to name the
+  # winner a second time in a separate field — two independent judgments that can
+  # (and did) disagree with each other.
+  best_evaluation = min(evaluations, key=lambda e: e.rank)
+
   return ScreeningResponse(
-    recommended_candidate_id=_resolve_candidate_id(llm_response.recommended_candidate_index, results),
+    recommended_candidate_id=best_evaluation.candidate_id,
     evaluations=evaluations,
   )

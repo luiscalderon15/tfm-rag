@@ -32,13 +32,14 @@ facets_raw = st.text_area(
   height=150,
 )
 top_n = st.slider("Number of candidates to shortlist", min_value=1, max_value=20, value=5)
+use_rerank = st.checkbox("Use cross-encoder reranking", value=True)
 
 if st.button("Find candidates") and jd_full.strip():
   facets = [line.strip() for line in facets_raw.splitlines() if line.strip()]
   queries = facets if facets else jd_full
 
   with st.spinner("Searching candidates..."):
-    results = retriever.retrieve(queries=queries, rerank_query=jd_full, top_n=top_n)
+    results = retriever.retrieve(queries=queries, rerank_query=jd_full, top_n=top_n, use_rerank=use_rerank)
 
   if not results:
     st.warning("No matching candidates found.")
