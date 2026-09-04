@@ -1,7 +1,6 @@
 from pydantic import BaseModel, Field
-import ollama
 
-from src.llm import MODEL_OPENSOURCE_CHAT
+from src.llm import chat_structured
 
 
 class CandidateEvaluation(BaseModel):
@@ -141,26 +140,23 @@ def _resolve_candidate_id(index: int, results) -> str:
 def evaluate_candidates(
   job_description: str,
   results,
-  model: str = MODEL_OPENSOURCE_CHAT,
+  provider: str = None,
 ) -> ScreeningResponse:
   """
   results: the list of CandidateResult returned by HybridCandidateRetriever.retrieve().
+  provider: overrides the configured LLM_PROVIDER for this call only ("ollama" or "azure").
   """
   user_message = (
     f"Job Description:\n{job_description}\n\n"
     f"Candidates:\n{_format_candidates_block(results)}"
   )
 
-  response = ollama.chat(
-    model=model,
-    messages=[
-      {"role": "system", "content": SYSTEM_PROMPT},
-      {"role": "user", "content": user_message},
-    ],
-    format=_LLMScreeningResponse.model_json_schema(),
-    options={"temperature": 0},
+  llm_response = chat_structured(
+    system_prompt=SYSTEM_PROMPT,
+    user_message=user_message,
+    schema=_LLMScreeningResponse,
+    provider=provider,
   )
-  llm_response = _LLMScreeningResponse.model_validate_json(response["message"]["content"])
 
   if not llm_response.evaluations:
     raise ValueError("LLM returned no evaluations.")
