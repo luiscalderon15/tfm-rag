@@ -11,6 +11,7 @@ SEMANTIC_K = 30
 KEYWORD_K = 30
 SHORTLIST_SIZE = 15
 MAX_EVIDENCE_PER_CANDIDATE = 3
+RETRIEVAL_MODES = ("semantic", "keyword", "hybrid")
 
 
 @dataclass
@@ -49,7 +50,7 @@ class HybridCandidateRetriever:
     shortlist_size=SHORTLIST_SIZE,
     max_evidence_per_candidate=MAX_EVIDENCE_PER_CANDIDATE,
     cross_encoder=None,
-    use_rerank=True,
+    use_rerank=False,
   ):
     self.vectorstore = vectorstore
     self.candidate_id_field = candidate_id_field
@@ -79,18 +80,25 @@ class HybridCandidateRetriever:
         facets.append((f"facet_{i + 1}", query))
     return facets
 
-  def _hybrid_chunk_search(self, query):
-    semantic_hits = self.vectorstore.similarity_search_with_score(query, k=self.semantic_k)
-    semantic_ranked_ids = [doc.metadata[self.chunk_id_field] for doc, _ in semantic_hits]
+  def _hybrid_chunk_search(self, query, retrieval_mode="hybrid"):
+    if retrieval_mode not in RETRIEVAL_MODES:
+      raise ValueError(f"Unknown retrieval_mode: {retrieval_mode!r}. Expected one of {RETRIEVAL_MODES}.")
 
-    tokenized_query = query.lower().split()
-    bm25_scores = self.bm25.get_scores(tokenized_query)
-    top_idx = np.argsort(bm25_scores)[::-1][: self.keyword_k]
-    keyword_ranked_ids = [self.chunk_ids[i] for i in top_idx]
+    ranked_lists = []
 
-    return reciprocal_rank_fusion([semantic_ranked_ids, keyword_ranked_ids], k=self.rrf_k)
+    if retrieval_mode in ("semantic", "hybrid"):
+      semantic_hits = self.vectorstore.similarity_search_with_score(query, k=self.semantic_k)
+      ranked_lists.append([doc.metadata[self.chunk_id_field] for doc, _ in semantic_hits])
 
-  def retrieve(self, queries, rerank_query=None, top_n=10, use_rerank=None):
+    if retrieval_mode in ("keyword", "hybrid"):
+      tokenized_query = query.lower().split()
+      bm25_scores = self.bm25.get_scores(tokenized_query)
+      top_idx = np.argsort(bm25_scores)[::-1][: self.keyword_k]
+      ranked_lists.append([self.chunk_ids[i] for i in top_idx])
+
+    return reciprocal_rank_fusion(ranked_lists, k=self.rrf_k)
+
+  def retrieve(self, queries, rerank_query=None, top_n=10, use_rerank=None, retrieval_mode="hybrid", cross_encoder=None):
     """
     queries: a single query string, or a list of queries/facets to fuse. Each list
     item is either a plain string (auto-named "facet_1", "facet_2", ...) or an
@@ -99,6 +107,12 @@ class HybridCandidateRetriever:
 
     use_rerank: overrides the instance default (self.use_rerank) for this call only,
     e.g. to let a UI toggle reranking on/off without rebuilding the retriever.
+
+    retrieval_mode: "hybrid" (default, semantic+keyword fused via RRF), "semantic",
+    or "keyword" — isolates one signal for ablation studies.
+
+    cross_encoder: overrides the instance default (self.cross_encoder) for this call
+    only, e.g. to A/B test two reranker models without rebuilding the retriever.
     """
     use_rerank = self.use_rerank if use_rerank is None else use_rerank
     facets = self._normalize_queries(queries)
@@ -106,7 +120,7 @@ class HybridCandidateRetriever:
 
     per_facet_candidate_best = []
     for _, facet_query in facets:
-      fused_chunk_scores = self._hybrid_chunk_search(facet_query)
+      fused_chunk_scores = self._hybrid_chunk_search(facet_query, retrieval_mode=retrieval_mode)
       candidate_best = rollup_chunks_to_candidates(
         fused_chunk_scores, self.docs_by_chunk_id, self.candidate_id_field
       )
@@ -120,7 +134,7 @@ class HybridCandidateRetriever:
 
     if use_rerank:
       rerank_text = rerank_query if rerank_query is not None else facets[0][1]
-      results = self._rerank(rerank_text, results)
+      results = self._rerank(rerank_text, results, cross_encoder=cross_encoder)
 
     results.sort(key=lambda r: r.score, reverse=True)
     return results[:top_n]
@@ -147,7 +161,9 @@ class HybridCandidateRetriever:
       results.append(CandidateResult(candidate_id=candidate_id, score=fused_scores[candidate_id], evidence=evidence, years_exp=years_exp))
     return results
 
-  def _rerank(self, rerank_query, results):
+  def _rerank(self, rerank_query, results, cross_encoder=None):
+    cross_encoder = cross_encoder or self.cross_encoder
+
     pairs = []
     pair_owners = []
     for result in results:
@@ -158,7 +174,7 @@ class HybridCandidateRetriever:
     if not pairs:
       return results
 
-    rerank_scores = self.cross_encoder.predict(pairs)
+    rerank_scores = cross_encoder.predict(pairs)
     for evidence, score in zip(pair_owners, rerank_scores):
       evidence.rerank_score = float(score)
 

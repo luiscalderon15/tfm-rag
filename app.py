@@ -1,6 +1,6 @@
 import streamlit as st
 
-from config import VECTOR_STORE_TRAINEE,VECTOR_STORE_JUNIOR,VECTOR_STORE_CIRA
+from config import VECTOR_STORE_TRAINEE,VECTOR_STORE_JUNIOR,VECTOR_STORE_CIRA,VECTOR_STORE_FULL
 from src.vectorstore import load_vectorstore
 from src.search.hybrid_retriever import HybridCandidateRetriever
 from src.bot import evaluate_candidates
@@ -14,6 +14,7 @@ VECTORSTORE_OPTIONS = {
   "Junior": VECTOR_STORE_JUNIOR,
   "Trainee": VECTOR_STORE_TRAINEE,
   "Cira": VECTOR_STORE_CIRA,
+  "Full": VECTOR_STORE_FULL,
 }
 
 
@@ -32,7 +33,7 @@ facets_raw = st.text_area(
   height=150,
 )
 top_n = st.slider("Number of candidates to shortlist", min_value=1, max_value=20, value=5)
-use_rerank = st.checkbox("Use cross-encoder reranking", value=True)
+use_rerank = st.checkbox("Use cross-encoder reranking", value=False)
 
 if st.button("Find candidates") and jd_full.strip():
   facets = [line.strip() for line in facets_raw.splitlines() if line.strip()]

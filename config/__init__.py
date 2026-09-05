@@ -16,6 +16,7 @@ VECTOR_DB = DATA_FOLDER/"vectorstore"
 VECTOR_STORE_CIRA = VECTOR_DB/"cira"
 VECTOR_STORE_JUNIOR = VECTOR_DB/"junior"
 VECTOR_STORE_TRAINEE = VECTOR_DB/"trainee"
+VECTOR_STORE_FULL = VECTOR_DB/"full-resumes"
 
 if __name__ == "__main__":
     print(BASE_DIR)

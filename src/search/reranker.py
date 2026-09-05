@@ -1,4 +1,3 @@
-
 #CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-12-v2"
 CROSS_ENCODER_MODEL = "BAAI/bge-reranker-v2-m3"
 _cross_encoders = {}

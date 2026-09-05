@@ -153,7 +153,7 @@ def load_all_results(output_folder: str) -> list[dict]:
 def return_chunk(chunk_id:str, key_column:str = "chunk_id", exp_column = "experience")->str:
     data = pd.read_json(DATA_FOLDER/"resumes_full.json")
     data_chunk = data[data[key_column] == chunk_id]
-    return data_chunk[exp_column].iloc[0]
+    return print(data_chunk[exp_column].iloc[0])
 
 if __name__ == "__main__":
     
