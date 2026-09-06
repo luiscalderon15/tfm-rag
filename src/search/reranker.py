@@ -1,5 +1,5 @@
-#CROSS_ENCODER_MODEL = "cross-encoder/ms-marco-MiniLM-L-12-v2"
-CROSS_ENCODER_MODEL = "BAAI/bge-reranker-v2-m3"
+from config import RERANKER_DEFAULT_MODEL as CROSS_ENCODER_MODEL
+
 _cross_encoders = {}
 
 def load_cross_encoder(model_name=CROSS_ENCODER_MODEL):

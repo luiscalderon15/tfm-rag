@@ -1,7 +1,7 @@
 from rank_bm25 import BM25Okapi
 from langchain_community.vectorstores import FAISS
 
-CHUNK_ID_FIELD = "id_chunk"
+from config import CHUNK_ID_FIELD
 
 def build_bm25_index(vectorstore:FAISS, chunk_id_field:str=CHUNK_ID_FIELD):
   """Build a BM25 index over the same chunk corpus already embedded in the FAISS vectorstore."""

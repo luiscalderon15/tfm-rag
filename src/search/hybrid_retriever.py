@@ -2,15 +2,23 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from src.search.fussion import reciprocal_rank_fusion, RRF_K
-from src.search.keywords import build_bm25_index, CHUNK_ID_FIELD
+from config import (
+  CANDIDATE_ID_FIELD,
+  CHUNK_ID_FIELD,
+  DEFAULT_TOP_N,
+  KEYWORD_K,
+  MAX_EVIDENCE_PER_CANDIDATE,
+  RRF_K,
+  SEMANTIC_K,
+  SHORTLIST_SIZE,
+  USE_RERANK,
+)
+from config import RETRIEVAL_MODE as DEFAULT_RETRIEVAL_MODE
+from src.search.fussion import reciprocal_rank_fusion
+from src.search.keywords import build_bm25_index
 from src.search.reranker import cross_encoder as default_cross_encoder
-from src.rollup import rollup_chunks_to_candidates, fuse_candidate_facets, CANDIDATE_ID_FIELD
+from src.rollup import rollup_chunks_to_candidates, fuse_candidate_facets
 
-SEMANTIC_K = 30
-KEYWORD_K = 30
-SHORTLIST_SIZE = 15
-MAX_EVIDENCE_PER_CANDIDATE = 3
 RETRIEVAL_MODES = ("semantic", "keyword", "hybrid")
 
 
@@ -53,7 +61,7 @@ class HybridCandidateRetriever:
     shortlist_size=SHORTLIST_SIZE,
     max_evidence_per_candidate=MAX_EVIDENCE_PER_CANDIDATE,
     cross_encoder=None,
-    use_rerank=False,
+    use_rerank=USE_RERANK,
   ):
     self.vectorstore = vectorstore
     self.candidate_id_field = candidate_id_field
@@ -124,7 +132,7 @@ class HybridCandidateRetriever:
         facets.append((f"facet_{i + 1}", query))
     return facets
 
-  def _hybrid_chunk_search(self, query, retrieval_mode="hybrid"):
+  def _hybrid_chunk_search(self, query, retrieval_mode=DEFAULT_RETRIEVAL_MODE):
     if retrieval_mode not in RETRIEVAL_MODES:
       raise ValueError(f"Unknown retrieval_mode: {retrieval_mode!r}. Expected one of {RETRIEVAL_MODES}.")
 
@@ -142,7 +150,7 @@ class HybridCandidateRetriever:
 
     return reciprocal_rank_fusion(ranked_lists, k=self.rrf_k)
 
-  def retrieve(self, queries, rerank_query=None, top_n=10, use_rerank=None, retrieval_mode="hybrid", cross_encoder=None):
+  def retrieve(self, queries, rerank_query=None, top_n=DEFAULT_TOP_N, use_rerank=None, retrieval_mode=DEFAULT_RETRIEVAL_MODE, cross_encoder=None):
     """
     queries: a single query string, or a list of queries/facets to fuse. Each list
     item is either a plain string (auto-named "facet_1", "facet_2", ...) or an

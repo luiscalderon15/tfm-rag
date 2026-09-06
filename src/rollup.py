@@ -1,6 +1,6 @@
+from config import CANDIDATE_ID_FIELD, RRF_K
 from src.search.fussion import reciprocal_rank_fusion
 
-CANDIDATE_ID_FIELD = "id"
 def rollup_chunks_to_candidates(fused_chunk_scores, docs_by_chunk_id, candidate_id_field=CANDIDATE_ID_FIELD):
   """MaxSim rollup: keep each candidate's single best-scoring chunk for one query/facet."""
   best = {}
@@ -14,7 +14,7 @@ def rollup_chunks_to_candidates(fused_chunk_scores, docs_by_chunk_id, candidate_
     if candidate_id not in best or score > best[candidate_id][0]:
       best[candidate_id] = (score, chunk_id)
   return best
-RRF_K = 60
+
 def fuse_candidate_facets(per_facet_candidate_best, k=RRF_K):
   """RRF across facets: candidates covering more distinct JD facets rank higher than a single perfect match."""
   ranked_lists = []

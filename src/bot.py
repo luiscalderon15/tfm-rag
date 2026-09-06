@@ -133,9 +133,14 @@ ABOUT ME:
 
 OTHER RULES:
 - Refer to candidates ONLY by their number (candidate_index). You are not given any name or ID string for candidates — never invent, guess, or repeat one.
-- Rank the candidates relative to each other for this specific job description (1 = best match).
+- Rank the candidates relative to each other for this specific job description. Ranks MUST be exactly 1, 2, 3, ... up to the number of candidates given — the best candidate is rank 1, always. Never start numbering from any value other than 1, and never skip or repeat a number.
 - For each candidate, list which job requirements their given data actually supports (matched_requirements), and which relevant requirements have no evidence in their given data (gaps).
 - Do not penalize a candidate for a requirement outside the scope of the data you were given — only report gaps you can actually observe from what was provided (or from a clear years-of-experience shortfall, per the rule above).
+
+SELF-CONSISTENCY CHECK — do this silently before returning your answer:
+- No specific technology/tool/skill may appear in BOTH matched_requirements and gaps for the same candidate. If you find one that does, remove it from gaps.
+- Job description requirements are often compound sentences bundling several distinct skills together (e.g. "SQL, Python, Git and Docker; practical experience with Azure..."). Never copy such a bundled sentence into gaps as a whole if you already matched part of it — split it, and put ONLY the specific sub-part you found no evidence for into gaps, worded narrowly (e.g. "SQL" or "Azure Data Factory", not the entire original sentence).
+- Your `justification` text must not contradict matched_requirements or gaps — never write "no evidence of X" in the justification if X is listed in matched_requirements, and never claim a match in the justification for something listed in gaps.
 - Return ONLY the JSON object matching the schema, nothing else.
 """
 
@@ -182,24 +187,32 @@ def _resolve_candidate_id(index: int, results) -> str:
   return results[index - 1].candidate_id
 
 
-def _validate_ranks(evaluations) -> None:
-  """Ensures the LLM returned a clean 1..N ranking — no duplicates, no gaps."""
-  ranks = sorted(evaluation.rank for evaluation in evaluations)
-  expected = list(range(1, len(evaluations) + 1))
-  if ranks != expected:
-    raise ValueError(
-      f"LLM returned an invalid ranking: expected ranks {expected}, got {ranks}."
-    )
+def _normalize_ranks(evaluations) -> None:
+  """
+  Re-numbers ranks to a clean 1..N sequence, preserving relative order — fixes
+  the common case where the LLM's ranks are valid relative to each other but
+  offset or gapped (e.g. it returns [3, 4, 5] instead of [1, 2, 3]). Only
+  raises if ranks aren't distinct, since that's genuinely ambiguous to resolve
+  automatically (no way to know which candidate should end up where).
+  """
+  ranks = [evaluation.rank for evaluation in evaluations]
+  if len(set(ranks)) != len(ranks):
+    raise ValueError(f"LLM returned duplicate ranks: {sorted(ranks)}.")
+
+  for new_rank, evaluation in enumerate(sorted(evaluations, key=lambda e: e.rank), start=1):
+    evaluation.rank = new_rank
 
 
 def evaluate_candidates(
   job_description: str,
   results,
   provider: str = None,
+  temperature: float = 0,
 ) -> ScreeningResponse:
   """
   results: the list of CandidateResult returned by HybridCandidateRetriever.retrieve().
   provider: overrides the configured LLM_PROVIDER for this call only ("ollama" or "azure").
+  temperature: see chat_structured — ignored for Azure unless AZURE_SUPPORTS_TEMPERATURE=true.
   """
   user_message = (
     f"Job Description:\n{job_description}\n\n"
@@ -211,12 +224,13 @@ def evaluate_candidates(
     user_message=user_message,
     schema=_LLMScreeningResponse,
     provider=provider,
+    temperature=temperature,
   )
 
   if not llm_response.evaluations:
     raise ValueError("LLM returned no evaluations.")
 
-  _validate_ranks(llm_response.evaluations)
+  _normalize_ranks(llm_response.evaluations)
 
   evaluations = [
     CandidateEvaluation(
@@ -263,12 +277,14 @@ STYLE:
 """
 
 
-def answer_about_candidate(question: str, candidate, provider: str = None) -> str:
+def answer_about_candidate(question: str, candidate, provider: str = None, temperature: float = 0) -> str:
   """
   Answers a free-form question about ONE candidate directly — no ranking, no
   matched_requirements/gaps, just a grounded natural-language answer. For a
   chatbot that already knows which candidate it's asking about (e.g. via
   HybridCandidateRetriever.get_candidate()).
+
+  temperature: see chat_structured — ignored for Azure unless AZURE_SUPPORTS_TEMPERATURE=true.
   """
   user_message = f"Question: {question}\n\n{_format_candidates_block([candidate])}"
 
@@ -277,5 +293,6 @@ def answer_about_candidate(question: str, candidate, provider: str = None) -> st
     user_message=user_message,
     schema=CandidateAnswer,
     provider=provider,
+    temperature=temperature,
   )
   return result.answer

@@ -1,4 +1,5 @@
-RRF_K = 60
+from config import RRF_K
+
 def reciprocal_rank_fusion(ranked_id_lists:list[list], k:int=RRF_K):
   """Fuse multiple best-first ranked id lists into a single score dict via RRF."""
   scores = {}

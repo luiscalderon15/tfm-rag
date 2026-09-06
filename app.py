@@ -1,3 +1,4 @@
+import pandas as pd
 import streamlit as st
 
 from config import VECTOR_STORE_TRAINEE,VECTOR_STORE_JUNIOR,VECTOR_STORE_CIRA,VECTOR_STORE_FULL
@@ -49,8 +50,21 @@ if st.button("Find candidates") and jd_full.strip():
       response = evaluate_candidates(jd_full, results)
 
     evidence_by_candidate = {result.candidate_id: result.evidence for result in results}
+    retrieval_rank_by_id = {result.candidate_id: position for position, result in enumerate(results, start=1)}
+    score_by_id = {result.candidate_id: result.score for result in results}
 
     st.subheader(f"Recommended: {response.recommended_candidate_id}")
+
+    ranking_table = pd.DataFrame([
+      {
+        "LLM rank": evaluation.rank,
+        "Retrieval rank": retrieval_rank_by_id.get(evaluation.candidate_id),
+        "Candidate ID": evaluation.candidate_id,
+        "Retrieval score": score_by_id.get(evaluation.candidate_id),
+      }
+      for evaluation in sorted(response.evaluations, key=lambda e: e.rank)
+    ])
+    st.dataframe(ranking_table, hide_index=True, use_container_width=True)
 
     for evaluation in sorted(response.evaluations, key=lambda e: e.rank):
       with st.expander(f"#{evaluation.rank} — {evaluation.candidate_id}"):

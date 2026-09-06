@@ -4,8 +4,8 @@ from pathlib import Path
 import pandas as pd
 from pydantic import BaseModel, Field
 
+from config import CANDIDATE_ID_FIELD, RERANKER_ALTERNATIVE_MODEL, RERANKER_DEFAULT_MODEL
 from src.llm import chat_structured
-from src.rollup import CANDIDATE_ID_FIELD
 
 FRAGMENTS_FIELD = "anonimized_fragments"
 
@@ -300,8 +300,8 @@ def evaluate_retrieval(
 
 
 CROSS_ENCODER_MODELS = {
-  "bge": "BAAI/bge-reranker-v2-m3",
-  "minilm": "cross-encoder/ms-marco-MiniLM-L-12-v2",
+  "bge": RERANKER_DEFAULT_MODEL,
+  "minilm": RERANKER_ALTERNATIVE_MODEL,
 }
 
 METHODS = {
