@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 from pydantic import BaseModel, Field
 
-from config import CANDIDATE_ID_FIELD, RERANKER_ALTERNATIVE_MODEL, RERANKER_DEFAULT_MODEL
+from config import CANDIDATE_ID_FIELD, FACETS_COUNT, RERANKER_ALTERNATIVE_MODEL, RERANKER_DEFAULT_MODEL
 from src.llm import chat_structured
 
 FRAGMENTS_FIELD = "anonimized_fragments"
@@ -365,7 +365,7 @@ PROMPT_GENERATE_FACETS = """You are an expert in job description analysis, prepa
 Your task: read the raw job description below and produce exactly {n} bullets that summarize ONLY its technical requirements, responsibilities, and projects — nothing else.
 
 Each bullet will be used as an independent search query, so:
-- Each bullet must be self-contained and cover ONE coherent technical theme (e.g. "cloud platform + pipelines", or "databases + data warehousing"). Never combine two unrelated themes into the same bullet just to hit the target count (e.g. never merge a technical tool/skill with a soft skill, a language requirement, or an unrelated technical domain).
+- Each bullet must be self-contained and cover ONE coherent technical theme. Never combine two unrelated themes into the same bullet just to hit the target count (e.g. never merge a technical tool/skill with a soft skill, a language requirement, or an unrelated technical domain).
 - If the job description has more than {n} distinct requirements, group only the ones that are naturally related (same technology stack, same type of task) into a single bullet — do not force-merge unrelated ones.
 - If the job description has fewer than {n} distinct requirements, return fewer bullets rather than splitting one requirement artificially or inventing content.
 
@@ -381,7 +381,7 @@ Exclude entirely — do not extract, and never fold into another bullet:
 - Statements about career development, growth opportunities, or "what we offer".
 - Benefits, salary, compensation, insurance, holidays, or working conditions.
 - Generic promotional or recruiting language.
-- Required proficiency in spoken/written languages (e.g. "English B2").
+- Required proficiency in spoken/written languages
 - Soft skills mentioned in isolation (e.g. "communication skills", "teamwork") — only include them if they are inseparable from a technical responsibility in the original text.
 
 Rules:
@@ -394,7 +394,7 @@ Job description:
 """
 
 
-def generate_facets(job_description: str, n: int = 5, provider: str = None) -> list:
+def generate_facets(job_description: str, n: int = FACETS_COUNT, provider: str = None) -> list:
   """Splits a job description into `n` self-contained technical facets via the LLM."""
   result = chat_structured(
     system_prompt=PROMPT_GENERATE_FACETS.format(n=n, job_description=job_description),
@@ -407,7 +407,7 @@ def generate_facets(job_description: str, n: int = 5, provider: str = None) -> l
 
 def add_facets_to_synthetic_jds(
   jds_dir: str | Path,
-  n: int = 5,
+  n: int = FACETS_COUNT,
   provider: str = None,
   skip_existing: bool = True,
 ) -> None:

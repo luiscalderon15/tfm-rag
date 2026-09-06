@@ -280,14 +280,27 @@ class CandidateNarrative(BaseModel):
       "on their 'About me' self-description."
     ),
   )
-  recruiter_assessment: str = Field(
+  assessment_fit: str = Field(
     ...,
     description=(
-      "A flowing narrative (not a bullet list) connecting this candidate's matched "
-      "requirements and supporting evidence to the job description, grounded only in "
-      "the matched_requirements/gaps/evidence already established — never in 'About me'."
+      "A short narrative (not a bullet list) connecting this candidate's matched "
+      "requirements and supporting evidence to the job description's responsibilities — "
+      "why they fit. Grounded only in matched_requirements/evidence already established "
+      "— never in 'About me'."
     ),
   )
+  assessment_open_questions: str = Field(
+    ...,
+    description=(
+      "A short narrative (not a bullet list) covering this candidate's not-evidenced "
+      "requirements (gaps), phrased as open questions rather than definitive "
+      "shortcomings. Grounded only in the gaps already established — never in 'About me'."
+    ),
+  )
+
+  @property
+  def recruiter_assessment(self) -> str:
+    return f"{self.assessment_fit}\n\n{self.assessment_open_questions}"
 
 
 class NarrativeResponse(BaseModel):
@@ -311,12 +324,21 @@ class _LLMCandidateNarrative(BaseModel):
       "on their 'About me' self-description."
     ),
   )
-  recruiter_assessment: str = Field(
+  assessment_fit: str = Field(
     ...,
     description=(
-      "A flowing narrative (not a bullet list) connecting this candidate's matched "
-      "requirements and supporting evidence to the job description, grounded only in "
-      "the matched_requirements/gaps/evidence already established — never in 'About me'."
+      "A short narrative (not a bullet list) connecting this candidate's matched "
+      "requirements and supporting evidence to the job description's responsibilities — "
+      "why they fit. Grounded only in matched_requirements/evidence already established "
+      "— never in 'About me'."
+    ),
+  )
+  assessment_open_questions: str = Field(
+    ...,
+    description=(
+      "A short narrative (not a bullet list) covering this candidate's not-evidenced "
+      "requirements (gaps), phrased as open questions rather than definitive "
+      "shortcomings. Grounded only in the gaps already established — never in 'About me'."
     ),
   )
 
@@ -331,27 +353,31 @@ NARRATIVE_SYSTEM_PROMPT = """You are a precise recruiting assistant writing a na
 
 You will be given a job description and, for each candidate (labeled "Candidate #1", "Candidate #2", ...): their own "About me" self-description, the job requirements already confirmed as matched (Matched requirements), the requirements not evidenced in their data (Not evidenced in the data provided), and the supporting evidence fragments used to reach those conclusions.
 
-For each candidate, write two sections:
+For each candidate, write three short pieces of text, each its own separate paragraph — never combine them into one block:
 
-1. CANDIDATE SUMMARY:
+1. CANDIDATE SUMMARY (candidate_summary):
 - A short, natural, HR-recruiter-style synthesis of who this candidate is, based ONLY on their "About me" text.
 - If "About me" is "not given" or empty, say so briefly instead of inventing one (e.g. "No self-description was provided for this candidate.").
 - Do not use "About me" content anywhere else in your output — it belongs only in this section.
 
-2. RECRUITER ASSESSMENT:
-- A flowing narrative (NOT a bullet list) that connects the candidate's matched requirements and supporting evidence to the responsibilities/requirements in the job description, and mentions the not-evidenced items as open questions rather than definitive shortcomings.
-- Base this section STRICTLY on the given Matched requirements, Not evidenced items, and Supporting evidence — never on "About me". "About me" is self-reported, unverified narrative and must never be used as evidence of a qualification.
-- Do not introduce any requirement, skill, or fact that is not already present in Matched requirements, Not evidenced, or Supporting evidence — this stage does not re-evaluate the candidate, it only explains the evaluation already made.
-- Phrase not-evidenced items as "no evidence of X in the data reviewed" rather than "lacks X" or "does not have X", consistent with the fact that this is a partial, retrieved slice of the candidate's real background.
+2. FIT (assessment_fit):
+- A narrative (NOT a bullet list) that connects the candidate's matched requirements and supporting evidence to the responsibilities/requirements in the job description — why they fit.
+- Base this STRICTLY on the given Matched requirements and Supporting evidence — never on "About me" or on the Not evidenced list.
+
+3. OPEN QUESTIONS (assessment_open_questions):
+- A narrative (NOT a bullet list) covering the candidate's not-evidenced requirements, phrased as open questions rather than definitive shortcomings (e.g. "no evidence of X in the data reviewed" rather than "lacks X" or "does not have X") — consistent with the fact that this is a partial, retrieved slice of the candidate's real background.
+- Base this STRICTLY on the given Not evidenced list — never on "About me" or on the Matched requirements list. If Not evidenced is empty, say plainly that no open questions were identified from the data reviewed.
+
+Do not introduce any requirement, skill, or fact in FIT or OPEN QUESTIONS that is not already present in Matched requirements, Not evidenced, or Supporting evidence — these sections do not re-evaluate the candidate, they only explain the evaluation already made.
 
 SELF-CONSISTENCY CHECK — do this silently before returning your answer:
-- Never write "no evidence of X" or otherwise claim X is missing if X (or an unmistakable direct match for it) is already listed in Matched requirements — that already means evidence for X was found.
-- Never claim a match for something that is listed in Not evidenced.
+- Never write "no evidence of X" or otherwise claim X is missing (in assessment_open_questions) if X (or an unmistakable direct match for it) is already listed in Matched requirements — that already means evidence for X was found, and belongs in assessment_fit instead.
+- Never claim a match (in assessment_fit) for something that is listed in Not evidenced.
 - If you catch yourself about to make either mistake, drop that claim rather than writing it.
 
 STYLE:
-- Write in full sentences, not bullet points, for both sections.
-- Be concise — a few sentences per section is enough.
+- Write in full sentences, not bullet points, for all three fields.
+- Be concise — a few sentences per field is enough.
 - Refer to candidates ONLY by their number (candidate_index), exactly as given — never invent, guess, or repeat an ID.
 - Return ONLY the JSON object matching the schema, nothing else.
 """
@@ -394,12 +420,104 @@ def generate_candidate_narratives(
     CandidateNarrative(
       candidate_id=_resolve_candidate_id(narrative.candidate_index, results),
       candidate_summary=narrative.candidate_summary,
-      recruiter_assessment=narrative.recruiter_assessment,
+      assessment_fit=narrative.assessment_fit,
+      assessment_open_questions=narrative.assessment_open_questions,
     )
     for narrative in llm_response.narratives
   ]
 
   return NarrativeResponse(narratives=narratives)
+
+
+class EmailDraft(BaseModel):
+  subject: str = Field(..., description="A short, natural subject line for this outreach email.")
+  body: str = Field(
+    ...,
+    description=(
+      "The full email body, following the required template structure exactly. "
+      "Fill in '[relevant skill/area]' using only the matched requirements given. "
+      "Fill in '[Job Title]' and '[Company Name]' only if explicitly stated in the "
+      "job description given — otherwise leave those exact bracketed placeholders "
+      "untouched. Leave every other bracketed placeholder (candidate's first name, "
+      "the call duration choice, all Date & Time options, and the recruiter's name) "
+      "exactly as written in the template, unedited."
+    ),
+  )
+
+
+EMAIL_TEMPLATE = """Hi [Candidate's First Name],
+
+I came across your profile and was impressed by your experience in [relevant skill/area]. I believe your background could be a great fit for the [Job Title] position at [Company Name].
+
+I’d love to schedule a brief [15/20/30]-minute call to learn more about your experience, tell you a little more about the role, and see whether it could be a good fit for both sides.
+
+Would you be available for a quick conversation at any of the following times?
+
+• [Date & Time]
+• [Date & Time]
+• [Date & Time]
+
+If none of these work for you, feel free to suggest another time that suits you.
+
+Looking forward to hearing from you!
+
+Best regards,
+[Recruiter's Name]
+[Job Title]
+[Company Name]"""
+
+
+EMAIL_SYSTEM_PROMPT = """You are a precise recruiting assistant drafting a short outreach email to invite ONE candidate to a screening call, for a hiring manager to review and send themselves — you never send anything yourself.
+
+You MUST follow this exact template — do not rewrite, reorder, paraphrase, or add/remove any part of it:
+
+---
+""" + EMAIL_TEMPLATE + """
+---
+
+You will be given the job description and, for the one candidate being contacted, their matched requirements and a short recruiter assessment of their fit (already validated in a prior step — do not re-evaluate the candidate, only use this to fill the template).
+
+STRICT RULES:
+- Fill in "[relevant skill/area]" with a short, specific reference to one or two of the candidate's actual matched requirements/strengths given below — never invent a skill that isn't listed there.
+- Fill in "[Job Title]" and "[Company Name]" ONLY if that exact information is explicitly stated in the job description given below. If either is not explicitly present, leave that exact bracketed placeholder untouched, verbatim (keep writing "[Job Title]" or "[Company Name]" literally).
+- Leave every other bracketed placeholder EXACTLY as written in the template, verbatim, with no changes: "[Candidate's First Name]", "[15/20/30]", all three "[Date & Time]" bullets, and "[Recruiter's Name]". You are never given the candidate's real name, the recruiter's identity, or actual scheduling — never invent, guess, or remove these placeholders.
+- Do not add any new sentence, section, or signature line beyond the template.
+- Return ONLY the JSON object matching the schema, nothing else.
+"""
+
+
+def draft_outreach_email(
+  job_description: str,
+  evaluation: CandidateEvaluation,
+  narrative: CandidateNarrative,
+  provider: str = None,
+  temperature: float = 0,
+) -> EmailDraft:
+  """
+  Drafts a personalized outreach email (subject + body) for ONE already-ranked
+  candidate, following a fixed template. Text-only — never sent automatically,
+  only shown to the hiring manager to review/edit/send themselves. Grounded only
+  in this candidate's already-validated matched_requirements and recruiter
+  assessment (assessment_fit) — never invents a skill, company name, job title,
+  candidate name, schedule, or recruiter identity that wasn't explicitly given.
+  """
+  matched_lines = (
+    "\n".join(f"- {requirement}" for requirement in evaluation.matched_requirements)
+    or "- none"
+  )
+  user_message = (
+    f"Job Description:\n{job_description}\n\n"
+    f"Candidate's matched requirements:\n{matched_lines}\n\n"
+    f"Candidate's recruiter assessment (fit):\n{narrative.assessment_fit}"
+  )
+
+  return chat_structured(
+    system_prompt=EMAIL_SYSTEM_PROMPT,
+    user_message=user_message,
+    schema=EmailDraft,
+    provider=provider,
+    temperature=temperature,
+  )
 
 
 class CandidateAnswer(BaseModel):

@@ -14,6 +14,7 @@ RRF_K = RETRIEVAL_CONFIG.get("rrf_k", 60)
 SHORTLIST_SIZE = RETRIEVAL_CONFIG.get("shortlist_size", 15)
 MAX_EVIDENCE_PER_CANDIDATE = RETRIEVAL_CONFIG.get("max_evidence_per_candidate", 3)
 DEFAULT_TOP_N = RETRIEVAL_CONFIG.get("default_top_n", 10)
+FACETS_COUNT = RETRIEVAL_CONFIG.get("facets_count", 5)
 RETRIEVAL_MODE = RETRIEVAL_CONFIG.get("retrieval_mode", "hybrid")
 USE_RERANK = RETRIEVAL_CONFIG.get("use_rerank", False)
 

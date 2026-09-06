@@ -22,6 +22,7 @@ retrieval:
   shortlist_size: 15      # nº de candidatos que pasan de la fusión a construir evidencia/rerank
   max_evidence_per_candidate: 3  # tope de fragmentos de evidencia por candidato (nunca por debajo del nº de facets)
   default_top_n: 10       # nº de candidatos devueltos al final si no se especifica
+  facets_count: 5         # nº de facets que genera automáticamente generate_facets() a partir de la JD
   retrieval_mode: hybrid  # semantic | keyword | hybrid — "hybrid" es el default recomendado (nunca fue el peor en la evaluación)
   use_rerank: false       # desactivado por defecto — el rerank empeoró los resultados en la evaluación (3 pools x 2 ground truths)
   reranker:
