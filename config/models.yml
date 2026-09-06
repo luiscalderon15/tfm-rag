@@ -1,4 +1,4 @@
-llm_provider: llm_opensource  # cual de los 3 bloques llm_* de abajo esta activo por defecto
+llm_provider: llm_nano  # cual de los 3 bloques llm_* de abajo esta activo por defecto
 
 llm_opensource:
   provider: ollama

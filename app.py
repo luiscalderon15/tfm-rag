@@ -4,7 +4,7 @@ import streamlit as st
 from config import VECTOR_STORE_TRAINEE,VECTOR_STORE_JUNIOR,VECTOR_STORE_CIRA,VECTOR_STORE_FULL
 from src.vectorstore import load_vectorstore
 from src.search.hybrid_retriever import HybridCandidateRetriever
-from src.bot import evaluate_candidates
+from src.bot import evaluate_candidates, generate_candidate_narratives
 
 
 st.set_page_config(page_title="Candidate Screening Assistant")
@@ -49,6 +49,10 @@ if st.button("Find candidates") and jd_full.strip():
     with st.spinner("Evaluating shortlist..."):
       response = evaluate_candidates(jd_full, results)
 
+    with st.spinner("Writing candidate summaries..."):
+      narratives = generate_candidate_narratives(jd_full, results, response.evaluations)
+
+    narrative_by_id = {narrative.candidate_id: narrative for narrative in narratives.narratives}
     evidence_by_candidate = {result.candidate_id: result.evidence for result in results}
     retrieval_rank_by_id = {result.candidate_id: position for position, result in enumerate(results, start=1)}
     score_by_id = {result.candidate_id: result.score for result in results}
@@ -68,6 +72,13 @@ if st.button("Find candidates") and jd_full.strip():
 
     for evaluation in sorted(response.evaluations, key=lambda e: e.rank):
       with st.expander(f"#{evaluation.rank} — {evaluation.candidate_id}"):
+        narrative = narrative_by_id.get(evaluation.candidate_id)
+        if narrative:
+          st.markdown(f"**Candidate summary:** {narrative.candidate_summary}")
+          st.markdown(f"**Recruiter assessment:** {narrative.recruiter_assessment}")
+          st.divider()
+
+        st.caption("Verification details")
         st.markdown(f"**Justification:** {evaluation.justification}")
 
         if evaluation.matched_requirements:

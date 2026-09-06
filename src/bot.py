@@ -33,13 +33,9 @@ class CandidateEvaluation(BaseModel):
   justification: str = Field(
     ...,
     description=(
-      "Starts with a single short clause synthesizing who this candidate is "
-      "professionally, based ONLY on their 'About me' text if one was given (skip "
-      "this opening clause entirely if no 'About me' was given — do not invent one). "
-      "Then, in the same paragraph, continues with a concise explanation of this "
-      "candidate's rank, referencing only the years of experience, skills, "
-      "certifications, and experience fragments given for them — never the 'About "
-      "me' text itself as evidence for matched_requirements or gaps."
+      "A concise explanation of this candidate's rank, referencing only the "
+      "years of experience, skills, certifications, and experience fragments "
+      "given for them."
     ),
   )
 
@@ -88,13 +84,9 @@ class _LLMCandidateEvaluation(BaseModel):
   justification: str = Field(
     ...,
     description=(
-      "Starts with a single short clause synthesizing who this candidate is "
-      "professionally, based ONLY on their 'About me' text if one was given (skip "
-      "this opening clause entirely if no 'About me' was given — do not invent one). "
-      "Then, in the same paragraph, continues with a concise explanation of this "
-      "candidate's rank, referencing only the years of experience, skills, "
-      "certifications, and experience fragments given for them — never the 'About "
-      "me' text itself as evidence for matched_requirements or gaps."
+      "A concise explanation of this candidate's rank, referencing only the "
+      "years of experience, skills, certifications, and experience fragments "
+      "given for them."
     ),
   )
 
@@ -108,7 +100,7 @@ class _LLMScreeningResponse(BaseModel):
 
 SYSTEM_PROMPT = """You are a precise recruiting assistant helping a hiring manager screen candidates for a job opening.
 
-You will be given a job description and a set of candidates. Each candidate is labeled ONLY with a number ("Candidate #1", "Candidate #2", ...), followed by their total years of professional experience, their listed skills, their listed certifications, their own short "About me" self-description (if available), and a short list of experience fragments pulled from their CV, each labeled with the job requirement (facet) it was retrieved for.
+You will be given a job description and a set of candidates. Each candidate is labeled ONLY with a number ("Candidate #1", "Candidate #2", ...), followed by their total years of professional experience, their listed skills, their listed certifications, and a short list of experience fragments pulled from their CV, each labeled with the job requirement (facet) it was retrieved for.
 
 STRICT GROUNDING — this is the most important rule:
 - Base your entire evaluation ONLY on the "Total years of professional experience" figure, the "Skills" list, the "Certifications" list, and the experience fragments given below for that specific candidate. These are your ONLY sources of truth.
@@ -125,11 +117,6 @@ SKILLS AND CERTIFICATIONS:
 - Treat the "Skills" and "Certifications" lists as ground truth, same as years of experience — do not re-derive or guess them from the fragments.
 - A job requirement can be satisfied directly by an entry in Skills or Certifications, even if that same tool/technology is never mentioned again in the experience fragments.
 - An empty Skills or Certifications list means none were recorded for this candidate — do not treat this as a gap by itself unless the job description explicitly requires something from that list.
-
-ABOUT ME:
-- "About me" is the candidate's own self-description — it exists ONLY so you can open the justification with a one-clause synthesis of who this candidate is professionally.
-- Never use "About me" as evidence for matched_requirements or gaps — it is self-reported narrative, not a verifiable fact like years of experience, skills, certifications, or an experience fragment.
-- If no "About me" was given for a candidate, skip the opening clause entirely — do not invent one.
 
 OTHER RULES:
 - Refer to candidates ONLY by their number (candidate_index). You are not given any name or ID string for candidates — never invent, guess, or repeat one.
@@ -158,7 +145,7 @@ def _format_about_me(about_me: str) -> str:
   return f"About me: {about_me.strip()}"
 
 
-def _format_candidates_block(results) -> str:
+def _format_candidates_block(results, include_about_me: bool = True) -> str:
   blocks = []
   for index, result in enumerate(results, start=1):
     years_exp_line = (
@@ -168,13 +155,41 @@ def _format_candidates_block(results) -> str:
     )
     skills_line = _format_list_field("Skills", result.skills)
     certifications_line = _format_list_field("Certifications", result.certifications)
-    about_me_line = _format_about_me(result.about_me)
     evidence_lines = "\n".join(
       f"  [{evidence.facet}] {evidence.chunk_text}" for evidence in result.evidence
     )
-    blocks.append(
-      f"Candidate #{index}\n{years_exp_line}\n{skills_line}\n{certifications_line}\n{about_me_line}\n{evidence_lines}"
+    lines = [f"Candidate #{index}", years_exp_line, skills_line, certifications_line]
+    if include_about_me:
+      lines.append(_format_about_me(result.about_me))
+    lines.append(evidence_lines)
+    blocks.append("\n".join(lines))
+  return "\n\n".join(blocks)
+
+
+def _format_narrative_candidates_block(results, evaluations) -> str:
+  evaluation_by_id = {evaluation.candidate_id: evaluation for evaluation in evaluations}
+  blocks = []
+  for index, result in enumerate(results, start=1):
+    evaluation = evaluation_by_id[result.candidate_id]
+    matched_lines = (
+      "\n".join(f"  - {requirement}" for requirement in evaluation.matched_requirements)
+      or "  none"
     )
+    gaps_lines = "\n".join(f"  - {gap}" for gap in evaluation.gaps) or "  none"
+    evidence_lines = "\n".join(
+      f"  [{evidence.facet}] {evidence.chunk_text}" for evidence in result.evidence
+    )
+    lines = [
+      f"Candidate #{index}",
+      _format_about_me(result.about_me),
+      "Matched requirements:",
+      matched_lines,
+      "Not evidenced in the data provided:",
+      gaps_lines,
+      "Supporting evidence:",
+      evidence_lines,
+    ]
+    blocks.append("\n".join(lines))
   return "\n\n".join(blocks)
 
 
@@ -216,7 +231,7 @@ def evaluate_candidates(
   """
   user_message = (
     f"Job Description:\n{job_description}\n\n"
-    f"Candidates:\n{_format_candidates_block(results)}"
+    f"Candidates:\n{_format_candidates_block(results, include_about_me=False)}"
   )
 
   llm_response = chat_structured(
@@ -252,6 +267,139 @@ def evaluate_candidates(
     recommended_candidate_id=best_evaluation.candidate_id,
     evaluations=evaluations,
   )
+
+
+class CandidateNarrative(BaseModel):
+  candidate_id: str = Field(
+    ..., description="The candidate's ID exactly as given in the input."
+  )
+  candidate_summary: str = Field(
+    ...,
+    description=(
+      "A short, HR-recruiter-style synthesis of who this candidate is, based only "
+      "on their 'About me' self-description."
+    ),
+  )
+  recruiter_assessment: str = Field(
+    ...,
+    description=(
+      "A flowing narrative (not a bullet list) connecting this candidate's matched "
+      "requirements and supporting evidence to the job description, grounded only in "
+      "the matched_requirements/gaps/evidence already established — never in 'About me'."
+    ),
+  )
+
+
+class NarrativeResponse(BaseModel):
+  narratives: list[CandidateNarrative] = Field(
+    ..., description="One narrative pair per candidate provided."
+  )
+
+
+class _LLMCandidateNarrative(BaseModel):
+  """Same shape as CandidateNarrative, but identifies the candidate by position —
+  see _LLMCandidateEvaluation for why."""
+
+  candidate_index: int = Field(
+    ...,
+    description="The candidate's number exactly as given in the input, e.g. 2 for 'Candidate #2'.",
+  )
+  candidate_summary: str = Field(
+    ...,
+    description=(
+      "A short, HR-recruiter-style synthesis of who this candidate is, based only "
+      "on their 'About me' self-description."
+    ),
+  )
+  recruiter_assessment: str = Field(
+    ...,
+    description=(
+      "A flowing narrative (not a bullet list) connecting this candidate's matched "
+      "requirements and supporting evidence to the job description, grounded only in "
+      "the matched_requirements/gaps/evidence already established — never in 'About me'."
+    ),
+  )
+
+
+class _LLMNarrativeResponse(BaseModel):
+  narratives: list[_LLMCandidateNarrative] = Field(
+    ..., description="One narrative pair per candidate provided."
+  )
+
+
+NARRATIVE_SYSTEM_PROMPT = """You are a precise recruiting assistant writing a narrative summary for a hiring manager, for each candidate in a shortlist that has already been ranked and evaluated.
+
+You will be given a job description and, for each candidate (labeled "Candidate #1", "Candidate #2", ...): their own "About me" self-description, the job requirements already confirmed as matched (Matched requirements), the requirements not evidenced in their data (Not evidenced in the data provided), and the supporting evidence fragments used to reach those conclusions.
+
+For each candidate, write two sections:
+
+1. CANDIDATE SUMMARY:
+- A short, natural, HR-recruiter-style synthesis of who this candidate is, based ONLY on their "About me" text.
+- If "About me" is "not given" or empty, say so briefly instead of inventing one (e.g. "No self-description was provided for this candidate.").
+- Do not use "About me" content anywhere else in your output — it belongs only in this section.
+
+2. RECRUITER ASSESSMENT:
+- A flowing narrative (NOT a bullet list) that connects the candidate's matched requirements and supporting evidence to the responsibilities/requirements in the job description, and mentions the not-evidenced items as open questions rather than definitive shortcomings.
+- Base this section STRICTLY on the given Matched requirements, Not evidenced items, and Supporting evidence — never on "About me". "About me" is self-reported, unverified narrative and must never be used as evidence of a qualification.
+- Do not introduce any requirement, skill, or fact that is not already present in Matched requirements, Not evidenced, or Supporting evidence — this stage does not re-evaluate the candidate, it only explains the evaluation already made.
+- Phrase not-evidenced items as "no evidence of X in the data reviewed" rather than "lacks X" or "does not have X", consistent with the fact that this is a partial, retrieved slice of the candidate's real background.
+
+SELF-CONSISTENCY CHECK — do this silently before returning your answer:
+- Never write "no evidence of X" or otherwise claim X is missing if X (or an unmistakable direct match for it) is already listed in Matched requirements — that already means evidence for X was found.
+- Never claim a match for something that is listed in Not evidenced.
+- If you catch yourself about to make either mistake, drop that claim rather than writing it.
+
+STYLE:
+- Write in full sentences, not bullet points, for both sections.
+- Be concise — a few sentences per section is enough.
+- Refer to candidates ONLY by their number (candidate_index), exactly as given — never invent, guess, or repeat an ID.
+- Return ONLY the JSON object matching the schema, nothing else.
+"""
+
+
+def generate_candidate_narratives(
+  job_description: str,
+  results,
+  evaluations: list[CandidateEvaluation],
+  provider: str = None,
+  temperature: float = 0,
+) -> NarrativeResponse:
+  """
+  Second-stage call, chained after evaluate_candidates: turns its already-validated
+  matched_requirements/gaps into a narrative summary and recruiter assessment per
+  candidate, batched in a single LLM call. about_me is introduced here for the first
+  time and only for candidate_summary — recruiter_assessment must never use it.
+
+  results: the same CandidateResult list passed to evaluate_candidates.
+  evaluations: evaluate_candidates(...).evaluations (or ScreeningResponse.evaluations).
+  provider/temperature: see chat_structured.
+  """
+  user_message = (
+    f"Job Description:\n{job_description}\n\n"
+    f"Candidates:\n{_format_narrative_candidates_block(results, evaluations)}"
+  )
+
+  llm_response = chat_structured(
+    system_prompt=NARRATIVE_SYSTEM_PROMPT,
+    user_message=user_message,
+    schema=_LLMNarrativeResponse,
+    provider=provider,
+    temperature=temperature,
+  )
+
+  if not llm_response.narratives:
+    raise ValueError("LLM returned no narratives.")
+
+  narratives = [
+    CandidateNarrative(
+      candidate_id=_resolve_candidate_id(narrative.candidate_index, results),
+      candidate_summary=narrative.candidate_summary,
+      recruiter_assessment=narrative.recruiter_assessment,
+    )
+    for narrative in llm_response.narratives
+  ]
+
+  return NarrativeResponse(narratives=narratives)
 
 
 class CandidateAnswer(BaseModel):
