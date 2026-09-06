@@ -23,15 +23,23 @@ class CandidateEvaluation(BaseModel):
   gaps: list[str] = Field(
     default_factory=list,
     description=(
-      "Job requirements NOT supported by any of this candidate's provided evidence. "
-      "Empty list if the evidence covers everything relevant."
+      "Job requirements for which NO evidence was found in this candidate's provided "
+      "data (years of experience, skills, certifications, experience fragments). This "
+      "means the data given does not show it — NOT that the candidate lacks it in "
+      "reality, since a CV/fragment selection is never a complete record of everything "
+      "a candidate knows. Empty list if the data given covers everything relevant."
     ),
   )
   justification: str = Field(
     ...,
     description=(
-      "A concise explanation of this candidate's rank, referencing only the "
-      "experience fragments given below for them."
+      "Starts with a single short clause synthesizing who this candidate is "
+      "professionally, based ONLY on their 'About me' text if one was given (skip "
+      "this opening clause entirely if no 'About me' was given — do not invent one). "
+      "Then, in the same paragraph, continues with a concise explanation of this "
+      "candidate's rank, referencing only the years of experience, skills, "
+      "certifications, and experience fragments given for them — never the 'About "
+      "me' text itself as evidence for matched_requirements or gaps."
     ),
   )
 
@@ -70,15 +78,23 @@ class _LLMCandidateEvaluation(BaseModel):
   gaps: list[str] = Field(
     default_factory=list,
     description=(
-      "Job requirements NOT supported by any of this candidate's provided evidence. "
-      "Empty list if the evidence covers everything relevant."
+      "Job requirements for which NO evidence was found in this candidate's provided "
+      "data (years of experience, skills, certifications, experience fragments). This "
+      "means the data given does not show it — NOT that the candidate lacks it in "
+      "reality, since a CV/fragment selection is never a complete record of everything "
+      "a candidate knows. Empty list if the data given covers everything relevant."
     ),
   )
   justification: str = Field(
     ...,
     description=(
-      "A concise explanation of this candidate's rank, referencing only the "
-      "experience fragments given below for them."
+      "Starts with a single short clause synthesizing who this candidate is "
+      "professionally, based ONLY on their 'About me' text if one was given (skip "
+      "this opening clause entirely if no 'About me' was given — do not invent one). "
+      "Then, in the same paragraph, continues with a concise explanation of this "
+      "candidate's rank, referencing only the years of experience, skills, "
+      "certifications, and experience fragments given for them — never the 'About "
+      "me' text itself as evidence for matched_requirements or gaps."
     ),
   )
 
@@ -92,25 +108,49 @@ class _LLMScreeningResponse(BaseModel):
 
 SYSTEM_PROMPT = """You are a precise recruiting assistant helping a hiring manager screen candidates for a job opening.
 
-You will be given a job description and a set of candidates. Each candidate is labeled ONLY with a number ("Candidate #1", "Candidate #2", ...), followed by their total years of professional experience, followed by a short list of experience fragments pulled from their CV, each labeled with the job requirement (facet) it was retrieved for.
+You will be given a job description and a set of candidates. Each candidate is labeled ONLY with a number ("Candidate #1", "Candidate #2", ...), followed by their total years of professional experience, their listed skills, their listed certifications, their own short "About me" self-description (if available), and a short list of experience fragments pulled from their CV, each labeled with the job requirement (facet) it was retrieved for.
 
 STRICT GROUNDING — this is the most important rule:
-- Base your entire evaluation ONLY on the "Total years of professional experience" figure and the experience fragments given below for that specific candidate. These two things are your ONLY source of truth.
-- Do not invent, assume, infer, or complete qualifications, skills, tools, or experience that is not explicitly and literally written in the given fragments — even if the job description mentions them and it seems "likely" or "typical" that a candidate in this field would have them.
-- Do NOT use your own general/world knowledge about what a candidate in a similar role "usually" knows or has done. If a specific tool, technology, or requirement named in the job description does not appear verbatim (or as an unmistakable direct paraphrase) in that candidate's given fragments, it is NOT a match.
-- Before adding anything to matched_requirements, silently check: "can I point to the exact sentence or phrase in this candidate's fragments that supports this?" If you cannot, do not add it — put the requirement in gaps instead, or omit it if it is out of scope for the evidence you were given.
+- Base your entire evaluation ONLY on the "Total years of professional experience" figure, the "Skills" list, the "Certifications" list, and the experience fragments given below for that specific candidate. These are your ONLY sources of truth.
+- Do not invent, assume, infer, or complete qualifications, skills, tools, or experience that is not explicitly and literally present in that data — even if the job description mentions them and it seems "likely" or "typical" that a candidate in this field would have them.
+- Do NOT use your own general/world knowledge about what a candidate in a similar role "usually" knows or has done. If a specific tool, technology, or requirement named in the job description does not appear verbatim (or as an unmistakable direct match) in that candidate's Skills, Certifications, or fragments, it is NOT a match.
+- Before adding anything to matched_requirements, silently check: "can I point to this exact item in this candidate's Skills/Certifications/fragments?" If you cannot, do not add it — put the requirement in gaps instead, or omit it if it is out of scope for the evidence you were given.
+- IMPORTANT: "gaps" means "not evidenced in the data given to you" — it does NOT mean "the candidate lacks this in real life". The data you receive is a partial, retrieved slice of a candidate's actual background, never their complete profile. Phrase gaps and justifications accordingly (e.g. "no evidence of X in the data provided" rather than "does not have X" or "lacks X").
 
 YEARS OF EXPERIENCE:
 - Treat the "Total years of professional experience" number as ground truth — do not re-derive or guess it from the fragments.
 - If the job description states a required number/range of years of experience, compare it directly against this number. If the candidate's total is clearly below the required range, this is a real gap on seniority/experience — state it explicitly, even if individual skills otherwise match.
 
+SKILLS AND CERTIFICATIONS:
+- Treat the "Skills" and "Certifications" lists as ground truth, same as years of experience — do not re-derive or guess them from the fragments.
+- A job requirement can be satisfied directly by an entry in Skills or Certifications, even if that same tool/technology is never mentioned again in the experience fragments.
+- An empty Skills or Certifications list means none were recorded for this candidate — do not treat this as a gap by itself unless the job description explicitly requires something from that list.
+
+ABOUT ME:
+- "About me" is the candidate's own self-description — it exists ONLY so you can open the justification with a one-clause synthesis of who this candidate is professionally.
+- Never use "About me" as evidence for matched_requirements or gaps — it is self-reported narrative, not a verifiable fact like years of experience, skills, certifications, or an experience fragment.
+- If no "About me" was given for a candidate, skip the opening clause entirely — do not invent one.
+
 OTHER RULES:
 - Refer to candidates ONLY by their number (candidate_index). You are not given any name or ID string for candidates — never invent, guess, or repeat one.
 - Rank the candidates relative to each other for this specific job description (1 = best match).
-- For each candidate, list which job requirements their given fragments actually support (matched_requirements), and which relevant requirements are NOT supported by any of their given fragments (gaps).
-- Do not penalize a candidate for a requirement outside the scope of the fragments you were given — only report gaps you can actually observe from the provided evidence (or from a clear years-of-experience shortfall, per the rule above).
+- For each candidate, list which job requirements their given data actually supports (matched_requirements), and which relevant requirements have no evidence in their given data (gaps).
+- Do not penalize a candidate for a requirement outside the scope of the data you were given — only report gaps you can actually observe from what was provided (or from a clear years-of-experience shortfall, per the rule above).
 - Return ONLY the JSON object matching the schema, nothing else.
 """
+
+
+def _format_list_field(label: str, values: list) -> str:
+  cleaned = [str(v).strip() for v in values if v and str(v).strip() not in ('""', "''")]
+  if not cleaned:
+    return f"{label}: none listed"
+  return f"{label}: " + ", ".join(cleaned)
+
+
+def _format_about_me(about_me: str) -> str:
+  if not about_me or about_me.strip() in ('""', "''"):
+    return "About me: not given"
+  return f"About me: {about_me.strip()}"
 
 
 def _format_candidates_block(results) -> str:
@@ -121,10 +161,15 @@ def _format_candidates_block(results) -> str:
       if result.years_exp is not None
       else "Total years of professional experience: unknown"
     )
+    skills_line = _format_list_field("Skills", result.skills)
+    certifications_line = _format_list_field("Certifications", result.certifications)
+    about_me_line = _format_about_me(result.about_me)
     evidence_lines = "\n".join(
       f"  [{evidence.facet}] {evidence.chunk_text}" for evidence in result.evidence
     )
-    blocks.append(f"Candidate #{index}\n{years_exp_line}\n{evidence_lines}")
+    blocks.append(
+      f"Candidate #{index}\n{years_exp_line}\n{skills_line}\n{certifications_line}\n{about_me_line}\n{evidence_lines}"
+    )
   return "\n\n".join(blocks)
 
 
@@ -135,6 +180,16 @@ def _resolve_candidate_id(index: int, results) -> str:
       f"were provided (valid range 1-{len(results)})."
     )
   return results[index - 1].candidate_id
+
+
+def _validate_ranks(evaluations) -> None:
+  """Ensures the LLM returned a clean 1..N ranking — no duplicates, no gaps."""
+  ranks = sorted(evaluation.rank for evaluation in evaluations)
+  expected = list(range(1, len(evaluations) + 1))
+  if ranks != expected:
+    raise ValueError(
+      f"LLM returned an invalid ranking: expected ranks {expected}, got {ranks}."
+    )
 
 
 def evaluate_candidates(
@@ -161,6 +216,8 @@ def evaluate_candidates(
   if not llm_response.evaluations:
     raise ValueError("LLM returned no evaluations.")
 
+  _validate_ranks(llm_response.evaluations)
+
   evaluations = [
     CandidateEvaluation(
       candidate_id=_resolve_candidate_id(evaluation.candidate_index, results),
@@ -181,3 +238,44 @@ def evaluate_candidates(
     recommended_candidate_id=best_evaluation.candidate_id,
     evaluations=evaluations,
   )
+
+
+class CandidateAnswer(BaseModel):
+  answer: str = Field(
+    ...,
+    description=(
+      "A direct, natural-language answer to the user's question about this ONE "
+      "candidate, grounded only in their years of experience, skills, "
+      "certifications, and CV text given below. If the given data does not "
+      "address the question, say so plainly instead of guessing or inferring."
+    ),
+  )
+
+
+CANDIDATE_QA_SYSTEM_PROMPT = """You are a precise recruiting assistant answering a hiring manager's question about ONE specific candidate.
+
+You will be given that candidate's total years of professional experience, their listed skills, their listed certifications, their own short "About me" self-description (if available), and their CV text.
+
+STYLE:
+- Answer the question directly and naturally, as you would speak to a hiring manager — do NOT use a rigid "matched requirements / gaps" checklist format, and do not restate boilerplate (like years of experience) unless it's actually relevant to what was asked.
+- Be concise. Only include what's relevant to the actual question.
+- Return ONLY the JSON object matching the schema, nothing else.
+"""
+
+
+def answer_about_candidate(question: str, candidate, provider: str = None) -> str:
+  """
+  Answers a free-form question about ONE candidate directly — no ranking, no
+  matched_requirements/gaps, just a grounded natural-language answer. For a
+  chatbot that already knows which candidate it's asking about (e.g. via
+  HybridCandidateRetriever.get_candidate()).
+  """
+  user_message = f"Question: {question}\n\n{_format_candidates_block([candidate])}"
+
+  result = chat_structured(
+    system_prompt=CANDIDATE_QA_SYSTEM_PROMPT,
+    user_message=user_message,
+    schema=CandidateAnswer,
+    provider=provider,
+  )
+  return result.answer

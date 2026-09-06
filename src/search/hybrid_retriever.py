@@ -29,6 +29,9 @@ class CandidateResult:
   score: float
   evidence: list = field(default_factory=list)
   years_exp: int = None
+  skills: list = field(default_factory=list)
+  certifications: list = field(default_factory=list)
+  about_me: str = None
 
 
 class HybridCandidateRetriever:
@@ -68,6 +71,47 @@ class HybridCandidateRetriever:
       doc.metadata[candidate_id_field]: doc.metadata.get("years_exp")
       for doc in self.docs_by_chunk_id.values()
     }
+    self.skills_by_candidate = {
+      doc.metadata[candidate_id_field]: doc.metadata.get("skills") or []
+      for doc in self.docs_by_chunk_id.values()
+    }
+    self.certifications_by_candidate = {
+      doc.metadata[candidate_id_field]: doc.metadata.get("certifications") or []
+      for doc in self.docs_by_chunk_id.values()
+    }
+    self.about_me_by_candidate = {
+      doc.metadata[candidate_id_field]: doc.metadata.get("about_me")
+      for doc in self.docs_by_chunk_id.values()
+    }
+    self.full_cv_by_candidate = {
+      doc.metadata[candidate_id_field]: doc.metadata.get("anonimized_raw_resume")
+      for doc in self.docs_by_chunk_id.values()
+    }
+
+  def get_candidate(self, candidate_id: str) -> CandidateResult:
+    """
+    Fetches one candidate directly by ID, bypassing retrieval entirely — for a
+    chatbot that already knows which candidate it wants to ask about. Unlike
+    retrieve(), there is no query to rank fragments against, so the evidence is
+    the candidate's full anonymized CV as a single entry, not retrieved fragments.
+    """
+    if candidate_id not in self.full_cv_by_candidate:
+      raise ValueError(f"No candidate found with candidate_id={candidate_id!r}.")
+
+    full_text = self.full_cv_by_candidate[candidate_id]
+    evidence = [
+      Evidence(facet="full_cv", chunk_id=f"{candidate_id}-full", chunk_text=full_text, fusion_score=None)
+    ]
+
+    return CandidateResult(
+      candidate_id=candidate_id,
+      score=None,
+      evidence=evidence,
+      years_exp=self.years_exp_by_candidate.get(candidate_id),
+      skills=self.skills_by_candidate.get(candidate_id, []),
+      certifications=self.certifications_by_candidate.get(candidate_id, []),
+      about_me=self.about_me_by_candidate.get(candidate_id),
+    )
 
   def _normalize_queries(self, queries):
     if isinstance(queries, str):
@@ -158,7 +202,18 @@ class HybridCandidateRetriever:
       evidence.sort(key=lambda e: e.fusion_score, reverse=True)
       evidence = evidence[:max_evidence]
       years_exp = self.years_exp_by_candidate.get(candidate_id)
-      results.append(CandidateResult(candidate_id=candidate_id, score=fused_scores[candidate_id], evidence=evidence, years_exp=years_exp))
+      skills = self.skills_by_candidate.get(candidate_id, [])
+      certifications = self.certifications_by_candidate.get(candidate_id, [])
+      about_me = self.about_me_by_candidate.get(candidate_id)
+      results.append(CandidateResult(
+        candidate_id=candidate_id,
+        score=fused_scores[candidate_id],
+        evidence=evidence,
+        years_exp=years_exp,
+        skills=skills,
+        certifications=certifications,
+        about_me=about_me,
+      ))
     return results
 
   def _rerank(self, rerank_query, results, cross_encoder=None):

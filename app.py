@@ -62,7 +62,7 @@ if st.button("Find candidates") and jd_full.strip():
             st.markdown(f"- {requirement}")
 
         if evaluation.gaps:
-          st.markdown("**Gaps:**")
+          st.markdown("**Not evidenced in the data provided (may still apply — not shown as absent):**")
           for gap in evaluation.gaps:
             st.markdown(f"- {gap}")
 
