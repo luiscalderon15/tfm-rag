@@ -175,7 +175,7 @@ def calculate_statistics(df: pd.DataFrame) -> pd.DataFrame:
 
 def monte_carlo_simulation(
     df: pd.DataFrame,
-    n_simulations: int = 100,
+    n_simulations: int = 10000,
 ) -> pd.DataFrame:
     """
     Monte Carlo simulation based on the empirical distribution
@@ -325,7 +325,7 @@ def plot_scalability(
         50,
         100,
         500,
-        # 1000,
+        1000,
     ]
 
     plt.figure(figsize=(8, 5))
@@ -459,7 +459,7 @@ def run_experiment(folder_path: str):
 
     simulation_df = monte_carlo_simulation(
         df,
-        n_simulations=100,
+        n_simulations=10000,
     )
 
     simulation_df.to_csv(

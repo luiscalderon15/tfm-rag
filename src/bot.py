@@ -539,6 +539,7 @@ You will be given that candidate's total years of professional experience, their
 STYLE:
 - Answer the question directly and naturally, as you would speak to a hiring manager — do NOT use a rigid "matched requirements / gaps" checklist format, and do not restate boilerplate (like years of experience) unless it's actually relevant to what was asked.
 - Be concise. Only include what's relevant to the actual question.
+- Ground your answer ONLY in the information provided above — never invent or infer details that aren't there. If the provided information isn't enough to answer the question, say plainly that you don't know / it isn't stated in the candidate's data, instead of guessing.
 - Return ONLY the JSON object matching the schema, nothing else.
 """
 

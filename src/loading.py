@@ -32,7 +32,7 @@ def load_pdf(file_path: Path) -> Document:
     start = time.perf_counter()
 
     # Load data
-    loader = PyPDFLoader(file_path)
+    loader = PyMuPDFLoader(file_path)
 
     # List of documents
     docs = loader.load()
@@ -63,7 +63,7 @@ def load_pdf(file_path: Path) -> Document:
 
     elapsed = time.perf_counter() - start
     logger.info(
-        "[PyPDFLoader] PDF '%s' loaded in %.2f s",
+        "[PyMuPDFLoader] PDF '%s' loaded in %.2f s",
         file_name,
         elapsed,
     )

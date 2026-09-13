@@ -58,6 +58,33 @@ def _get_client(name: str, temperature):
   return _clients[cache_key]
 
 
+def _resolve_temperature(cfg: dict, temperature: float = None):
+  """
+  temperature: overrides that model's configured temperature for this call
+  only. Ignored (returns None) if the model's config has `temperature: null`
+  (e.g. the o4-mini reasoning model, which rejects a custom temperature outright).
+  """
+  supports_temperature = cfg.get("temperature") is not None
+  if not supports_temperature:
+    return None
+  return temperature if temperature is not None else cfg.get("temperature")
+
+
+def get_tool_calling_client(provider: str = None, temperature: float = None):
+  """
+  Returns the raw LangChain chat client (ChatOllama/ChatOpenAI) for `provider` —
+  not wrapped in structured-output mode. Meant for `.bind_tools(...)`-based
+  tool-calling (the router in src/router.py lets the LLM pick which tool to call),
+  as opposed to chat_structured's single, schema-constrained JSON output.
+
+  provider: overrides LLM_PROVIDER for this call only.
+  """
+  model_name = provider or LLM_PROVIDER
+  cfg = _get_model_config(model_name)
+  effective_temperature = _resolve_temperature(cfg, temperature)
+  return _get_client(model_name, effective_temperature)
+
+
 def chat_structured(
   system_prompt: str,
   user_message: str,
@@ -71,18 +98,12 @@ def chat_structured(
   validated instance of `schema`.
 
   provider: overrides LLM_PROVIDER for this call only.
-  temperature: overrides that model's configured temperature for this call
-  only. Ignored if the model's config has `temperature: null` (e.g. the
-  o4-mini reasoning model, which rejects a custom temperature outright).
+  temperature: see _resolve_temperature.
   """
   model_name = provider or LLM_PROVIDER
   cfg = _get_model_config(model_name)
   backend = cfg["provider"]
-  supports_temperature = cfg.get("temperature") is not None
-
-  effective_temperature = None
-  if supports_temperature:
-    effective_temperature = temperature if temperature is not None else cfg.get("temperature")
+  effective_temperature = _resolve_temperature(cfg, temperature)
 
   client = _get_client(model_name, effective_temperature)
 

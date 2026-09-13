@@ -1,4 +1,4 @@
-llm_provider: llm_nano  # cual de los 3 bloques llm_* de abajo esta activo por defecto
+llm_provider: llm_gpt  # cual de los 3 bloques llm_* de abajo esta activo por defecto
 
 llm_opensource:
   provider: ollama
@@ -12,7 +12,7 @@ llm_nano:
 
 llm_gpt:
   provider: azure
-  deployment_name: gpt-4
+  deployment_name: gpt-4.1-mini
   temperature: 0
 
 retrieval:
