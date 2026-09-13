@@ -24,8 +24,6 @@ streamlit run candidate_chat.py --server.port 8502                # port 8502
 streamlit run router_app.py --server.port 8503                    # port 8503
 ```
 
-(See [`.claude/launch.json`](.claude/launch.json) for the exact launch configs, including the conda interpreter path used locally.)
-
 ---
 
 ## 🏗️ Architecture
